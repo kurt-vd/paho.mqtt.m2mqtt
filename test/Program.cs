@@ -85,13 +85,13 @@ namespace test
 
             Console.ReadKey();
             Console.WriteLine("subscribe to banana");
-            client.AddTopic(new Topic("/banana"));
+            client.Subscribe(new Topic("/banana"));
             Console.ReadKey();
             Console.WriteLine("subscribe to fig");
-            client.AddTopic(new Topic("/fig"));
+            client.Subscribe(new Topic("/fig"));
             Console.ReadKey();
             Console.WriteLine("unsubscribe from fig");
-            client.RemoveTopic("/fig");
+            client.Unsubscribe(new string[] { "/fig" });
             Console.ReadKey();
             do_the_thing = false;
             client.Disconnect();

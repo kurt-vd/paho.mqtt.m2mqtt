@@ -669,40 +669,6 @@ namespace uPLibrary.Networking.M2Mqtt
             }
         }
 
-        public List<Topic.Topic> GetTopics() {
-            return this.Topics;
-        }
-
-        public List<Topic.Topic> AddTopic(Topic.Topic t) {
-            var matched_topics = this.Topics.Where((x) => x == t).ToList();
-            // check the topic exists, if it's already there don't add it again
-            if (!matched_topics.Any())
-            {
-                this.Topics.Add(t);
-                if (this.IsConnected)
-                {
-                    this.Subscribe(t);
-                }
-            }
-            
-            return this.Topics;
-        }
-
-        public List<Topic.Topic> RemoveTopic(string topic_str) {
-            var matched_topics = this.Topics.Where((x) => x.topic == topic_str).ToList();
-            this.Topics = this.Topics.Where((x) => x.topic != topic_str).ToList();
-
-            if (matched_topics.Any())
-            {
-                if (this.IsConnected)
-                {
-                    this.Unsubscribe(new string[] { topic_str });
-                }
-            }
-
-            return this.Topics;
-        }
-
         /// <summary>
         /// Disconnect from broker
         /// </summary>
@@ -884,46 +850,37 @@ namespace uPLibrary.Networking.M2Mqtt
         /// <param name="topics">List of topics to subscribe</param>
         /// <param name="qosLevels">QOS levels related to topics</param>
         /// <returns>Message Id related to SUBSCRIBE message</returns>
+        public List<Topic.Topic> GetTopics()
+        {
+            return this.Topics;
+        }
 
-        public ushort Subscribe(string[] topics, byte[] qosLevels) {           
-            var subscribe = new MqttMsgSubscribe(topics, qosLevels)
-            {
-                MessageId = this.GetMessageId()
-            };
-            this.EnqueueInflight(subscribe, MqttMsgFlow.ToPublish);
-
-            return subscribe.MessageId;
+        public ushort Subscribe(string[] topics, byte[] qosLevels) {
+            var t = topics.Zip(qosLevels, (x,y) => new Topic.Topic(x, y)).ToList();
+            return Subscribe(t);
         }
 
         public ushort Subscribe(Topic.Topic t)
         {
-            var subscribe = new MqttMsgSubscribe(new string[] { t.topic }, new byte[] { t.qos.GetByte() })
-            {
-                MessageId = this.GetMessageId()
-            };
-            this.EnqueueInflight(subscribe, MqttMsgFlow.ToPublish);
-            return subscribe.MessageId;
+            return Subscribe(new List<Topic.Topic> {t});
         }
 
-        public ushort SubscribeAll()
+        public ushort Subscribe(IEnumerable<Topic.Topic> t)
         {
-            if (this.Topics.Any())
+            var topics_strs = this.Topics.Select((x) => x.topic).ToList();
+            var topics_to_add = t.Where((x) => !topics_strs.Contains(x.topic)).ToList();
+
+            this.Topics = this.Topics.Concat(topics_to_add).ToList();
+            var msgid = (ushort)0;
+            if (topics_to_add.Any())
             {
-                var topics = this.Topics.Select((x) => x.topic).ToArray();
-                var qosLevels = this.Topics.Select((x) => x.qos.GetByte()).ToArray();
-                var subscribe = new MqttMsgSubscribe(topics, qosLevels)
+                if (this.IsConnected)
                 {
-                    MessageId = this.GetMessageId()
-                };
-
-                // enqueue subscribe request into the inflight queue
-                this.EnqueueInflight(subscribe, MqttMsgFlow.ToPublish);
-
-                return subscribe.MessageId;
+                    msgid = SubscribeEnqueue(topics_to_add);
+                }
             }
-            else {
-                return 0;
-            }
+
+            return msgid;
         }
 
         /// <summary>
@@ -931,16 +888,60 @@ namespace uPLibrary.Networking.M2Mqtt
         /// </summary>
         /// <param name="topics">List of topics to unsubscribe</param>
         /// <returns>Message Id in UNSUBACK message from broker</returns>
+        public ushort Unsubscribe(string topic) {
+            return Unsubscribe( new string[] { topic });
+        }
+
         public ushort Unsubscribe(string[] topics)
         {
-            MqttMsgUnsubscribe unsubscribe =
-                new MqttMsgUnsubscribe(topics);
-            unsubscribe.MessageId = this.GetMessageId();
 
-            // enqueue unsubscribe request into the inflight queue
-            this.EnqueueInflight(unsubscribe, MqttMsgFlow.ToPublish);
+            var msgid = (ushort)0;
 
-            return unsubscribe.MessageId;
+            var topic_strs = this.Topics.Select((x) => x.topic).ToList();
+            var drop_topics = topics.Where((x) => topic_strs.Contains(x)).ToArray();
+            this.Topics = this.Topics.Where((x) => !topics.Contains(x.topic)).ToList();
+
+            if (drop_topics.Any())
+            {
+                if (this.IsConnected)
+                {
+                    var unsubscribe = new MqttMsgUnsubscribe(drop_topics);
+                    msgid = this.GetMessageId();
+                    unsubscribe.MessageId = msgid;
+
+                    // enqueue unsubscribe request into the inflight queue
+                    this.EnqueueInflight(unsubscribe, MqttMsgFlow.ToPublish);
+                }
+            }
+
+            return msgid;
+        }
+
+        public ushort SubscribeAll()
+        {
+            if (this.Topics.Any())
+            {
+                return SubscribeEnqueue(this.Topics);
+            }
+            else
+            {
+                return 0;
+            }
+        }
+
+        private ushort SubscribeEnqueue(IEnumerable<Topic.Topic> t) {
+
+            var topics = t.Select((x) => x.topic).ToArray();
+            var qosLevels = t.Select((x) => x.qos.GetByte()).ToArray();
+
+            var subscribe = new MqttMsgSubscribe(topics, qosLevels)
+                {
+                    MessageId = this.GetMessageId()
+                };
+
+            // enqueue subscribe request into the inflight queue
+            this.EnqueueInflight(subscribe, MqttMsgFlow.ToPublish);
+            return subscribe.MessageId;
         }
 
         /// <summary>
@@ -1157,7 +1158,7 @@ namespace uPLibrary.Networking.M2Mqtt
 
         private void OnEvent(Object Sender, EventArgs Ea, Events.Events.Options EventType)
         {
-            if (this.Disconnected != null)
+            if (this.Event != null)
             {
 
                 var args = new GenericEventArgs(EventType, Ea);
