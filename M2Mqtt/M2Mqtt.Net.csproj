@@ -8,7 +8,7 @@
     <OutputType>Library</OutputType>
     <RootNamespace>M2Mqtt.Net</RootNamespace>
     <AssemblyName>M2Mqtt.Net</AssemblyName>
-    <TargetFrameworkVersion>v4.6.2</TargetFrameworkVersion>
+    <TargetFrameworkVersion>v4.5</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
     <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
     <Deterministic>true</Deterministic>
